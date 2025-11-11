@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_DIR="${HOME}/.code/sessions"
+SOURCE_DIR="${HOME}/.codex/sessions"
 DEST_DIR_DEFAULT="codex_message"
 DEST_DIR_NAME="${CODEX_MESSAGE_DEST_DIR:-$DEST_DIR_DEFAULT}"
 

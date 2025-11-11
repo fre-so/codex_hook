@@ -1,0 +1,5 @@
+repos:
+  - repo: https://github.com/fre-so/codex_hook
+    rev: 0.1.1
+    hooks:
+      - id: copy-codex-sessions

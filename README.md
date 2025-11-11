@@ -21,7 +21,7 @@ any project via `pre-commit` or `prek` without duplicating the script.
 ```yaml
 repos:
   - repo: https://github.com/fre-so/codex_hook
-    rev: v0.1.0
+    rev: 0.1.1
     hooks:
       - id: copy-codex-sessions
         # Optional: override the destination directory
