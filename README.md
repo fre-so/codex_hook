@@ -26,7 +26,7 @@ hook to any project via `pre-commit` or `prek` without duplicating the script.
 ```yaml
 repos:
   - repo: https://github.com/fre-so/codex_hook
-    rev: 0.1.3
+    rev: 0.1.4
     hooks:
       - id: copy-codex-sessions
         args: [--dest-dir=codex_messages] # default is 'codex_messages/'
