@@ -14,17 +14,42 @@ convert_session_to_markdown() {
   local source_file="$1"
   local destination_file="$2"
   local session_cwd="$3"
+  local git_user="$4"
 
-  python3 - <<'PY' "$source_file" "$destination_file" "$session_cwd"
+  python3 - <<'PY' "$source_file" "$destination_file" "$session_cwd" "$git_user"
 import json
 import pathlib
+import re
 import sys
 
 source = pathlib.Path(sys.argv[1])
 destination = pathlib.Path(sys.argv[2])
 session_cwd = sys.argv[3]
+git_user = (sys.argv[4] if len(sys.argv) > 4 else "").strip() or "unknown-user"
+
+ENV_CONTEXT_RE = re.compile(r"<environment_context>.*?</environment_context>", re.DOTALL)
+REQUEST_MARKER = "## My request for Codex:"
+CONTEXT_HEADER = "# Context from my IDE setup:"
+
+
+def clean_user_text(text: str) -> str:
+    """Strip IDE noise, keep only the actual prompt."""
+    text = ENV_CONTEXT_RE.sub("", text)
+    text = text.strip()
+    if not text:
+        return ""
+
+    if REQUEST_MARKER in text:
+        text = text.split(REQUEST_MARKER, 1)[1]
+    elif CONTEXT_HEADER in text:
+        # Context without an explicit request should be ignored.
+        return ""
+
+    return text.strip()
+
 
 messages = []
+branch_name = "unknown-branch"
 with source.open("r", encoding="utf-8") as handle:
     for raw in handle:
         raw = raw.strip()
@@ -35,8 +60,15 @@ with source.open("r", encoding="utf-8") as handle:
         except json.JSONDecodeError:
             continue
 
+        entry_type = entry.get("type")
+        if entry_type == "session_meta":
+            payload = entry.get("payload") or {}
+            git_info = payload.get("git") or {}
+            branch_name = git_info.get("branch") or branch_name
+            continue
+
         payload = entry.get("payload") or {}
-        if entry.get("type") != "response_item":
+        if entry_type != "response_item":
             continue
         if payload.get("type") != "message":
             continue
@@ -52,6 +84,8 @@ with source.open("r", encoding="utf-8") as handle:
                 chunks.append(text)
 
         text_body = "\n\n".join(chunks).strip()
+        if role == "user":
+            text_body = clean_user_text(text_body)
         if not text_body:
             continue
 
@@ -63,7 +97,7 @@ with source.open("r", encoding="utf-8") as handle:
             }
         )
 
-lines = [f"# Codex Session {source.stem}", ""]
+lines = [f"# Codex Session {branch_name} — {git_user}", ""]
 if session_cwd:
     lines.append(f"- Working directory: `{session_cwd}`")
     lines.append("")
@@ -126,6 +160,15 @@ if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
   exit 1
 fi
 
+if ! git_user_name=$(git -C "${repo_root}" config user.name 2>/dev/null); then
+  git_user_name=""
+fi
+git_user_name="${git_user_name:-unknown-user}"
+# Generate a filesystem-friendly slug for filenames.
+git_user_slug=$(printf '%s' "${git_user_name}" | tr '[:upper:]' '[:lower:]')
+git_user_slug=$(printf '%s' "${git_user_slug}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g')
+[ -n "${git_user_slug}" ] || git_user_slug="user"
+
 target_dir="${repo_root}/${DEST_DIR_NAME}"
 
 if [ ! -d "${SOURCE_DIR}" ]; then
@@ -149,8 +192,19 @@ while IFS= read -r -d '' file_path; do
 
   if [ "${session_cwd}" = "${repo_root}" ]; then
     file_name="$(basename "${file_path}")"
-    dest_path="${target_dir}/${file_name%.jsonl}.md"
-    convert_session_to_markdown "${file_path}" "${dest_path}" "${session_cwd}"
+    base_name="${file_name%.jsonl}"
+    trimmed_base="${base_name#rollout-}"
+    if [ "${trimmed_base}" = "${base_name}" ]; then
+      sanitized_base="${git_user_slug}-${base_name}"
+    else
+      sanitized_base="${git_user_slug}-${trimmed_base}"
+    fi
+    dest_path="${target_dir}/${sanitized_base}.md"
+    legacy_path="${target_dir}/${base_name}.md"
+    convert_session_to_markdown "${file_path}" "${dest_path}" "${session_cwd}" "${git_user_name}"
+    if [ -e "${legacy_path}" ] && [ "${legacy_path}" != "${dest_path}" ]; then
+      rm -f "${legacy_path}"
+    fi
     printf 'Wrote %s -> %s\n' "${file_path}" "${dest_path}"
     generated_any=1
   fi
