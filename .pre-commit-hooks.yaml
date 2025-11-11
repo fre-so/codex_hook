@@ -1,0 +1,9 @@
+- id: copy-codex-sessions
+  name: Copy Codex sessions for this workspace
+  description: |
+    Reads ~/.code/sessions/*.jsonl files and copies the entries that match the
+    current repository's cwd to codex_message/ for archival before a commit.
+  entry: scripts/copy_codex_sessions.sh
+  language: script
+  pass_filenames: false
+  stages: [commit]
