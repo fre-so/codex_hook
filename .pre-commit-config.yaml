@@ -1,5 +1,8 @@
 repos:
-  - repo: https://github.com/fre-so/codex_hook
-    rev: 0.1.1
+  - repo: local
     hooks:
       - id: copy-codex-sessions
+        name: Copy Codex Sessions
+        entry: bash scripts/copy_codex_sessions.sh --dest-dir=codex_messages
+        language: system
+        pass_filenames: false

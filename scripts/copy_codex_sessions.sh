@@ -68,8 +68,9 @@ while IFS= read -r -d '' file_path; do
   fi
 
   if [ "${session_cwd}" = "${repo_root}" ]; then
-    cp -p "${file_path}" "${target_dir}/"
-    printf 'Copied %s\n' "${file_path}"
+    dest_path="${target_dir}/$(basename "${file_path}")"
+    cp -p "${file_path}" "${dest_path}"
+    printf 'Copied %s -> %s\n' "${file_path}" "${dest_path}"
     copied_any=1
   fi
 
@@ -77,4 +78,34 @@ done < <(find "${SOURCE_DIR}" -type f -name '*.jsonl' -print0)
 
 if [ "${copied_any}" -eq 0 ]; then
   echo "No sessions matched ${repo_root}." >&2
+fi
+
+# Determine relative path for git commands (strip leading ./ if present).
+relative_target="${DEST_DIR_NAME}"
+while [[ "${relative_target}" == ./* ]]; do
+  relative_target="${relative_target#./}"
+done
+[ -z "${relative_target}" ] && relative_target="."
+
+dirty_jsonl=()
+while IFS= read -r -d '' path; do
+  case "${path}" in
+    *.jsonl)
+      dirty_jsonl+=("${path}")
+      ;;
+  esac
+done < <(
+  {
+    git -C "${repo_root}" diff --name-only -z -- "${relative_target}" 2>/dev/null
+    git -C "${repo_root}" ls-files --others -z --exclude-standard -- "${relative_target}" 2>/dev/null
+  }
+)
+
+if [ "${#dirty_jsonl[@]}" -gt 0 ]; then
+  echo "Codex session files in ${relative_target} must be added to the commit:" >&2
+  for path in "${dirty_jsonl[@]}"; do
+    echo " - ${path}" >&2
+  done
+  echo "Stage the files above (e.g., git add) and re-run the commit." >&2
+  exit 1
 fi
