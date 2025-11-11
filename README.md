@@ -29,8 +29,7 @@ repos:
     rev: 0.1.2
     hooks:
       - id: copy-codex-sessions
-        # Optional: override the destination directory
-        # args: [--dest-dir=codex_messages] default is 'codex_message/'
+        args: [--dest-dir=codex_messages] # default is 'codex_messages/'
 ```
 
 3. Run `prek install` inside your project so Git uses the hook.

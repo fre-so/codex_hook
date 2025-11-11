@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SOURCE_DIR="${HOME}/.codex/sessions"
-DEST_DIR_DEFAULT="codex_message"
+DEST_DIR_DEFAULT="codex_messages"
 DEST_DIR_NAME="${CODEX_MESSAGE_DEST_DIR:-$DEST_DIR_DEFAULT}"
 
 print_usage() {
@@ -11,7 +11,7 @@ Usage: copy_codex_sessions.sh [--dest-dir <relative_path>]
 
 Options:
   --dest-dir PATH   Override the destination directory name relative to repo root.
-                    Defaults to "codex_message" or CODEX_MESSAGE_DEST_DIR env var.
+                    Defaults to "codex_messages" or CODEX_MESSAGE_DEST_DIR env var.
 EOU
 }
 
