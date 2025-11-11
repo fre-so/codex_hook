@@ -5,6 +5,86 @@ SOURCE_DIR="${HOME}/.codex/sessions"
 DEST_DIR_DEFAULT="codex_messages"
 DEST_DIR_NAME="${CODEX_MESSAGE_DEST_DIR:-$DEST_DIR_DEFAULT}"
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to convert Codex sessions to Markdown." >&2
+  exit 1
+fi
+
+convert_session_to_markdown() {
+  local source_file="$1"
+  local destination_file="$2"
+  local session_cwd="$3"
+
+  python3 - <<'PY' "$source_file" "$destination_file" "$session_cwd"
+import json
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+session_cwd = sys.argv[3]
+
+messages = []
+with source.open("r", encoding="utf-8") as handle:
+    for raw in handle:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            entry = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+
+        payload = entry.get("payload") or {}
+        if entry.get("type") != "response_item":
+            continue
+        if payload.get("type") != "message":
+            continue
+
+        role = payload.get("role")
+        if role not in ("user", "assistant"):
+            continue
+
+        chunks = []
+        for block in payload.get("content") or []:
+            text = block.get("text")
+            if text:
+                chunks.append(text)
+
+        text_body = "\n\n".join(chunks).strip()
+        if not text_body:
+            continue
+
+        messages.append(
+            {
+                "role": "User" if role == "user" else "Assistant",
+                "timestamp": entry.get("timestamp") or "unknown time",
+                "text": text_body,
+            }
+        )
+
+lines = [f"# Codex Session {source.stem}", ""]
+if session_cwd:
+    lines.append(f"- Working directory: `{session_cwd}`")
+    lines.append("")
+
+lines.append("---")
+lines.append("")
+
+if not messages:
+    lines.append("_No user/assistant messages were recorded in this session._")
+else:
+    for message in messages:
+        lines.append(f"## {message['role']} — {message['timestamp']}")
+        lines.append("")
+        lines.append(message["text"])
+        lines.append("")
+
+output = "\n".join(lines).rstrip() + "\n"
+destination.write_text(output, encoding="utf-8")
+PY
+}
+
 print_usage() {
   cat <<'EOU'
 Usage: copy_codex_sessions.sh [--dest-dir <relative_path>]
@@ -49,13 +129,13 @@ fi
 target_dir="${repo_root}/${DEST_DIR_NAME}"
 
 if [ ! -d "${SOURCE_DIR}" ]; then
-  echo "No session directory at ${SOURCE_DIR}; skipping copy." >&2
+  echo "No session directory at ${SOURCE_DIR}; skipping conversion." >&2
   exit 0
 fi
 
 mkdir -p "${target_dir}"
 
-copied_any=0
+generated_any=0
 while IFS= read -r -d '' file_path; do
   first_line=$(head -n 1 "${file_path}" || true)
   if [ -z "${first_line}" ]; then
@@ -68,15 +148,16 @@ while IFS= read -r -d '' file_path; do
   fi
 
   if [ "${session_cwd}" = "${repo_root}" ]; then
-    dest_path="${target_dir}/$(basename "${file_path}")"
-    cp -p "${file_path}" "${dest_path}"
-    printf 'Copied %s -> %s\n' "${file_path}" "${dest_path}"
-    copied_any=1
+    file_name="$(basename "${file_path}")"
+    dest_path="${target_dir}/${file_name%.jsonl}.md"
+    convert_session_to_markdown "${file_path}" "${dest_path}" "${session_cwd}"
+    printf 'Wrote %s -> %s\n' "${file_path}" "${dest_path}"
+    generated_any=1
   fi
 
 done < <(find "${SOURCE_DIR}" -type f -name '*.jsonl' -print0)
 
-if [ "${copied_any}" -eq 0 ]; then
+if [ "${generated_any}" -eq 0 ]; then
   echo "No sessions matched ${repo_root}." >&2
 fi
 
@@ -87,11 +168,11 @@ while [[ "${relative_target}" == ./* ]]; do
 done
 [ -z "${relative_target}" ] && relative_target="."
 
-dirty_jsonl=()
+dirty_markdown=()
 while IFS= read -r -d '' path; do
   case "${path}" in
-    *.jsonl)
-      dirty_jsonl+=("${path}")
+    *.md)
+      dirty_markdown+=("${path}")
       ;;
   esac
 done < <(
@@ -101,9 +182,9 @@ done < <(
   }
 )
 
-if [ "${#dirty_jsonl[@]}" -gt 0 ]; then
-  echo "Codex session files in ${relative_target} must be added to the commit:" >&2
-  for path in "${dirty_jsonl[@]}"; do
+if [ "${#dirty_markdown[@]}" -gt 0 ]; then
+  echo "Codex session markdown files in ${relative_target} must be added to the commit:" >&2
+  for path in "${dirty_markdown[@]}"; do
     echo " - ${path}" >&2
   done
   echo "Stage the files above (e.g., git add) and re-run the commit." >&2
